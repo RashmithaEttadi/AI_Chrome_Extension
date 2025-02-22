@@ -3,35 +3,67 @@
     It is used to style the popup
 */
 
-body {
-    width: 300px;
-    padding: 20px;
-    font-family: Arial, sans-serif;
-}
-
-h1 {
-    font-size: 1.5em;
-    color: #333;
-    margin-bottom: 15px;
-}
-
-p {
+/* index.css */
+.autotab-ghost {
+    color: #888 !important;
+    opacity: 0.7 !important;
+    pointer-events: none !important;
+  }
+  
+  .autotab-ghost-overlay {
+    position: absolute;
+    background: rgba(255, 255, 255, 0.9);
     color: #666;
-    line-height: 1.4;
+    padding: 2px 5px;
+    border-radius: 3px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    pointer-events: none;
+    z-index: 999999;
+  }
+  
+  .popup-container {
+    width: 300px;
+    padding: 15px;
+  }
+  
+  .form-group {
     margin-bottom: 15px;
-}
-
-button {
-    background-color: #4285f4;
+  }
+  
+  input[type="password"] {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+  }
+  
+  button#save {
+    background: #007bff;
     color: white;
     border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
+    padding: 8px 15px;
     cursor: pointer;
-    font-size: 14px;
-    transition: background-color 0.2s;
-}
+  }
+  .note {
+    font-size: 0.8em;
+    color: #666;
+    margin: 5px 0;
+  }
 
-button:hover {
-    background-color: #3367d6;
-}
+
+  .autotab-ghost {
+    color: #666 !important;
+    opacity: 0.8 !important;
+    position: relative;
+    display: inline;
+    font-style: italic;
+    pointer-events: none;
+  }
+  
+  .autotab-ghost-overlay {
+    position: absolute;
+    color: #999 !important;
+    pointer-events: none;
+    background: none !important;
+    border: none !important;
+    margin-left: 2px;
+  }

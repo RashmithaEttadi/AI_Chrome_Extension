@@ -2,18 +2,26 @@
     This is the popup for the chrome extension
     It is the first thing that the user sees when they click the extension icon
 -->
+<!-- index.html -->
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chrome Extension Template</title>
+  <title>AutoTab Settings</title>
+  <link rel="stylesheet" href="index.css">
 </head>
 <body>
-    <h1>Chrome Extension Popup</h1>
-    <p>This is a popup for the chrome extension</p>
-    <button>Click me!</button>
-    <link rel="stylesheet" href="index.css">
-    <script src="script.js"></script>
+  <div class="container">
+    <h1>AutoTab AI</h1>
+    <div class="form-group">
+      <label for="apiKey">OpenRouter API key:</label>
+      <input type="password" id="apiKey">
+    </div>
+    <p class="note">
+      Get your API key from <a href="https://openrouter.ai" target="_blank">OpenRouter.ai</a>
+    </p>
+    <button id="save">Save</button>
+    <div id="status"></div>
+  </div>
+  <script src="script.js"></script>
 </body>
 </html>
