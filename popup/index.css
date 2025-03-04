@@ -52,11 +52,15 @@
 
   .autotab-ghost {
     color: #666 !important;
-    opacity: 0.8 !important;
-    position: relative;
-    display: inline;
-    font-style: italic;
-    pointer-events: none;
+    opacity: 0.7 !important;
+    background: rgba(255, 255, 255, 0.9) !important;
+    padding: 2px 5px !important;
+    border-radius: 3px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    pointer-events: none !important;
+    font-style: italic !important;
+    white-space: nowrap !important;
+    z-index: 2147483647 !important;
   }
   
   .autotab-ghost-overlay {
@@ -66,4 +70,19 @@
     background: none !important;
     border: none !important;
     margin-left: 2px;
+    mix-blend-mode: multiply;
+    font-size: 0.95em;
+  }
+
+  .autotab-ghost, .autotab-ghost-overlay {
+    color: #666 !important;
+    opacity: 0.7;
+    pointer-events: none;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-style: italic;
+    z-index: 999999;
+    position: absolute;
+    white-space: nowrap;
   }

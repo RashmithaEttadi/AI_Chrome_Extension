@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       try {
-          
           await chrome.storage.sync.set({ apiKey: apiKeyInput.value });
           showStatus('Settings saved!', 'green');
       } catch (error) {

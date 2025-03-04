@@ -1,62 +1,55 @@
 // background.js
-console.log('Service Worker Initializing...'); 
+console.log('Service Worker Initialized');
 
-// Add activation handler
+// Keep service worker alive
+const keepAlive = () => setInterval(chrome.runtime.getPlatformInfo, 20_000);
 chrome.runtime.onStartup.addListener(() => {
+  keepAlive();
   console.log('Service Worker Started');
 });
 
-// Add error handler
+// Enhanced error handling
 self.addEventListener('error', (e) => {
   console.error('SW Error:', e.error);
+  return true;
 });
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'fetchCompletion') {
-      (async () => {
-        const payload = {
-            model: "qwen/qwen-turbo",
-            messages: [{
-              role: "system",
-              content: "Continue the text exactly where it left off. Only provide the next few words to complete the sentence. No explanations."
-            },{
-              role: "user",
-              content: `Complete this: "${message.text}"`
-            }],
-            max_tokens: 15,  // Very short suggestions
-            temperature: 0.2, // More deterministic
-            stop: ["\n", ".", ",", " "]
-          };
-        const url = "https://openrouter.ai/api/v1/chat/completions";
-  
-        try {
-          const response = await fetch(url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${message.apiKey}`
-            },
-            body: JSON.stringify(payload)
-          });
-          console.log("called openRouter API");
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-  
-          const data = await response.json();
-          console.log("data returned from Model", data);
-          if (data.choices && data.choices.length > 0) {
-            const completion = data.choices[0].message.content?.trim();
-            sendResponse(completion && completion.length > 0 ? completion : null);
-          } else {
-            console.error('No completion found in response:', data);
-            sendResponse(null); 
-          }
-        } catch (error) {
-          console.error("OpenRouter API error:", error);
-          sendResponse(null);
+
+// background.js
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'generate') {
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${request.apiKey}`;
+    
+    fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: `Continue this text naturally: "${request.text}". Respond ONLY with the text continuation, no explanations.`
+          }]
+        }],
+        generationConfig: {
+          maxOutputTokens: 25,
+          temperature: 0.3,
+          topP: 0.95
         }
-      })();
-      return true;
-    }
-  });
-  
+      })
+    })
+    .then(response => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    })
+    .then(data => {
+      
+      const completion = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      sendResponse(completion || null);
+      console.log("received response ");
+    })
+    .catch(error => {
+      console.error('Gemini Error:', error);
+      sendResponse(null);
+    });
+
+    return true; // Keep message channel open
+  }
+});

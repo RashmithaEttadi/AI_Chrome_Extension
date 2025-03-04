@@ -1,219 +1,219 @@
-const DEBOUNCE_TIME = 300;
-let currentRequest = null;
+// content.js
+const DEBOUNCE_TIME = 350;
+let currentGhost = null;
+let activeElement = null;
+let controller = null;
 
-console.log('Content script loaded!'); 
+console.log('Content script loaded!');
 
-// Add these at the bottom of content.js
-function debounce(func, timeout = 300) {
+function debounce(func, timeout = DEBOUNCE_TIME) {
   let timer;
   return (...args) => {
     clearTimeout(timer);
-    timer = setTimeout(() => { func.apply(this, args); }, timeout);
+    timer = setTimeout(() => func.apply(this, args), timeout);
   };
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('DOM fully loaded');
-});
-watchTextFields();
 async function getStorage(key) {
   return new Promise(resolve => {
     chrome.storage.sync.get([key], result => resolve(result[key]));
   });
 }
+
 function watchTextFields() {
-  const observer = new MutationObserver((mutations) => {
+  const observer = new MutationObserver(mutations => {
     mutations.forEach(mutation => {
       mutation.addedNodes.forEach(node => {
         if (node.nodeType === Node.ELEMENT_NODE) {
           handleNewElements(node);
-          if (node.shadowRoot) {
-            handleNewElements(node.shadowRoot);
-          }
+          traverseShadowDOM(node);
         }
       });
     });
   });
 
-  observer.observe(document.body, {
+  observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ['contenteditable']
+    attributeFilter: ['contenteditable', 'role', 'type']
   });
 
-  if (document.body) handleNewElements(document.body);
+  // Initial setup
+  handleNewElements(document.body);
+  traverseShadowDOM(document.body);
+}
+
+function traverseShadowDOM(node) {
+  if (node.shadowRoot) {
+    handleNewElements(node.shadowRoot);
+    node.shadowRoot.querySelectorAll('*').forEach(child => {
+      if (child.shadowRoot) traverseShadowDOM(child);
+    });
+  }
 }
 
 function handleNewElements(root) {
-  const getElements = (container) => {
-    try {
-      return Array.from(container.querySelectorAll(
-        'textarea, input[type="text"], [contenteditable="true"], [role="textbox"]'
-      )).filter(el => el instanceof HTMLElement);
-    } catch {
-      return [];
-    }
-  };
+  const textInputs = [
+    'textarea',
+    'input[type="text"]',
+    'input[type="search"]',
+    '[contenteditable="true"]',
+    '[role="textbox"]'
+  ].join(',');
 
-  const elements = getElements(root);
-
-  // Process shadow DOM
-  elements.forEach(element => {
-    if (element.shadowRoot) {
-      handleNewElements(element.shadowRoot);
-    }
-  });
+  const elements = Array.from(root.querySelectorAll(textInputs))
+    .filter(el => {
+      if (el.tagName === 'INPUT' && !['text', 'search'].includes(el.type)) return false;
+      return !el.dataset.autotabHandled;
+    });
 
   elements.forEach(element => {
-    if (element && element.dataset && !element.dataset.autotabHandled) {
-      attachAIHandler(element);
-      element.dataset.autotabHandled = "true";
-    }
+    element.dataset.autotabHandled = "true";
+    attachAIHandler(element);
+    if (element.shadowRoot) traverseShadowDOM(element);
   });
 }
+
 function attachAIHandler(element) {
-  const eventType = element.tagName === 'INPUT' ? 'input' : 'keyup';
-  
-  element.addEventListener(eventType, debounce(async (event) => {
-    if (event.isComposing || event.keyCode === 229) return;
+  const handleInput = debounce(async () => {
+    if (!element.isConnected) return;
+    activeElement = element;
     
-    const {text, position} = getTextContext(element);
-    if (text.length < 3) return;
+    const context = getTextContext(element);
+    if (!context || context.text.length < 3) {
+      clearGhostText();
+      return;
+    }
 
     try {
-      currentRequest?.abort();
-      currentRequest = new AbortController();
+      controller?.abort();
+      controller = new AbortController();
       
       const suggestion = await chrome.runtime.sendMessage({
         type: 'fetchCompletion',
-        text: text,
+        text: context.text,
         apiKey: await getStorage('apiKey')
       });
 
-        if (suggestion?.trim()) {  // Check for non-empty, non-whitespace suggestions
-              showGhostText(element, suggestion, position);
-            } else {
-              clearGhostText(); // Explicitly clear any previous ghost text
-                    }
+      if (suggestion?.trim()) {
+        showGhostText(element, suggestion, context.absolutePos);
+      } else {
+        clearGhostText();
+      }
     } catch (error) {
-      console.log('API error:', error);
-      clearGhostText(); 
+      if (error.name !== 'AbortError') {
+        console.error('API error:', error);
+      }
+      clearGhostText();
     }
-  }, DEBOUNCE_TIME));
+  });
 
+  const events = ['input', 'keyup', 'click', 'focus'];
+  events.forEach(event => element.addEventListener(event, handleInput));
+  
+  element.addEventListener('keydown', handleKeyDown);
   element.addEventListener('blur', clearGhostText);
   element.addEventListener('scroll', clearGhostText);
-  element.addEventListener('keydown', handleKeyDown);
 }
 
-// Modified getTextContext()
 function getTextContext(element) {
-  let userText = '';
-  let cursorPos = 0;
-
+  let text, cursorPos;
   if (element.isContentEditable) {
     const selection = window.getSelection();
+    if (!selection.rangeCount) return null;
     const range = selection.getRangeAt(0);
-    userText = range.startContainer.textContent.slice(0, range.startOffset);
-    cursorPos = userText.length;
+    const parent = range.commonAncestorContainer.parentElement;
+    text = parent.textContent || '';
+    cursorPos = range.startOffset;
   } else {
-    userText = element.value.slice(0, element.selectionStart);
+    text = element.value;
     cursorPos = element.selectionStart;
   }
 
-  // Get last 40 characters around cursor
-  const context = userText.slice(Math.max(0, cursorPos - 20), cursorPos + 20);
-  
+  const start = Math.max(0, cursorPos - 40);
+  const end = Math.min(text.length, cursorPos + 20);
   return {
-    text: context, // Send only the actual text around cursor
-    cursorPos: cursorPos,
-    fullText: userText
+    text: text.slice(start, end),
+    absolutePos: cursorPos
   };
 }
 
-function showGhostText(element, suggestion, context) {
-  // Clean up the suggestion
-  let cleanSuggestion = suggestion
-    .replace(context.fullText, '') // Remove duplicate text
-    .replace(/^[\s.,]+/, '') // Remove leading punctuation
-    .split(/[\s.,]/)[0]; // Take first word/phrase
-
-  if (!cleanSuggestion) return;
-
-  // Create ghost element
-  const ghost = element.isContentEditable 
-    ? createEditableGhost(cleanSuggestion) 
-    : createInputGhost(element, cleanSuggestion);
+function showGhostText(element, suggestion, cursorPos) {
+  clearGhostText();
   
-  positionGhost(ghost, element, context.cursorPos);
-}
-
-function createEditableGhost(text) {
-  const ghost = document.createElement('span');
-  ghost.className = 'autotab-ghost';
-  ghost.textContent = text;
-  return ghost;
-}
-
-function createInputGhost(element, text) {
   const ghost = document.createElement('div');
-  ghost.className = 'autotab-ghost-overlay';
-  ghost.textContent = text;
-  return ghost;
+  ghost.className = 'autotab-ghost';
+  ghost.textContent = suggestion;
+  
+  document.body.appendChild(ghost);
+  positionGhost(element, ghost, cursorPos);
+  currentGhost = ghost;
 }
 
-
-function clearGhostText() {
-  document.querySelectorAll('.autotab-ghost, .autotab-ghost-overlay').forEach(el => el.remove());
-}
-
-function positionGhost(ghost, element, cursorPos) {
+function positionGhost(element, ghost, cursorPos) {
+  const elementRect = element.getBoundingClientRect();
+  const style = getComputedStyle(element);
+  
   if (element.isContentEditable) {
     const range = document.createRange();
     const sel = window.getSelection();
     range.setStart(sel.anchorNode, sel.anchorOffset);
-    range.collapse(true);
-    range.insertNode(ghost);
-  } else {
-    const style = getComputedStyle(element);
-    const fontSize = parseInt(style.fontSize) || 16;
-    const paddingLeft = parseInt(style.paddingLeft) || 0;
+    const rect = range.getBoundingClientRect();
     
-    ghost.style.left = `${element.offsetLeft + cursorPos * fontSize * 0.6 + paddingLeft}px`;
-    ghost.style.top = `${element.offsetTop}px`;
+    ghost.style.left = `${rect.right + window.scrollX + 2}px`;
+    ghost.style.top = `${rect.top + window.scrollY}px`;
+  } else {
+    const fontSize = parseInt(style.fontSize) || 16;
+    const charWidth = fontSize * 0.6;
+    const scrollLeft = element.scrollLeft || 0;
+    
+    ghost.style.left = `${elementRect.left + (cursorPos * charWidth) - scrollLeft + 2}px`;
+    ghost.style.top = `${elementRect.top + window.scrollY}px`;
+  }
+
+  ghost.style.position = 'absolute';
+  ghost.style.zIndex = '2147483647';
+}
+
+function clearGhostText() {
+  if (currentGhost) {
+    currentGhost.remove();
+    currentGhost = null;
   }
 }
 
-function setCaretAfterGhost(ghost) {
-  const range = document.createRange();
-  range.setStartAfter(ghost);
-  range.collapse(true);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-}
-
 function handleKeyDown(event) {
-  const ghost = document.querySelector('.autotab-ghost, .autotab-ghost-overlay');
-  if (event.key === 'Tab' && ghost) {
+  if (event.key === 'Tab' && currentGhost) {
     event.preventDefault();
-    event.stopPropagation();
-    insertSuggestion(event.target, ghost.textContent);
+    insertSuggestion(activeElement, currentGhost.textContent);
     clearGhostText();
   }
 }
 
 function insertSuggestion(element, text) {
+  if (!element || !text) return;
+
   if (element.isContentEditable) {
-    const range = window.getSelection().getRangeAt(0);
-    range.insertNode(document.createTextNode(text));
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(document.createTextNode(text));
+      range.collapse(false);
+    }
   } else {
     const start = element.selectionStart;
-    element.value = element.value.slice(0, start) + text + element.value.slice(start);
-    element.selectionStart = start + text.length;
-    element.selectionEnd = start + text.length;
+    element.setRangeText(
+      text,
+      start,
+      start,
+      'end'
+    );
+    element.dispatchEvent(new Event('input', { bubbles: true }));
   }
-  clearGhostText();
 }
 
+// Initialize
+document.addEventListener('DOMContentLoaded', watchTextFields);
+document.addEventListener('visibilitychange', clearGhostText);
