@@ -15,33 +15,52 @@ function debounce(func, timeout = DEBOUNCE_TIME) {
 }
 
 async function getStorage(key) {
-  return new Promise(resolve => {
-    chrome.storage.sync.get([key], result => resolve(result[key]));
-  });
-}
-
-function watchTextFields() {
-  const observer = new MutationObserver(mutations => {
-    mutations.forEach(mutation => {
-      mutation.addedNodes.forEach(node => {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          handleNewElements(node);
-          traverseShadowDOM(node);
+  console.log('Getting storage for key:', key);
+  try {
+    return new Promise((resolve, reject) => {
+      chrome.storage.sync.get([key], result => {
+        console.log('Storage result:', result);
+        if (chrome.runtime.lastError) {
+          console.error('Storage error:', chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(result[key]);
         }
       });
     });
-  });
+  } catch (error) {
+    console.error('Error getting storage:', error);
+    return null;
+  }
+}
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['contenteditable', 'role', 'type']
-  });
+function watchTextFields() {
+  console.log('Starting to watch text fields');
+  try {
+    const observer = new MutationObserver(mutations => {
+      mutations.forEach(mutation => {
+        mutation.addedNodes.forEach(node => {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            handleNewElements(node);
+            traverseShadowDOM(node);
+          }
+        });
+      });
+    });
 
-  // Initial setup
-  handleNewElements(document.body);
-  traverseShadowDOM(document.body);
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['contenteditable', 'role', 'type']
+    });
+
+    // Initial setup
+    handleNewElements(document.body);
+    traverseShadowDOM(document.body);
+  } catch (error) {
+    console.error('Error in watchTextFields:', error);
+  }
 }
 
 function traverseShadowDOM(node) {
@@ -76,6 +95,7 @@ function handleNewElements(root) {
 }
 
 function attachAIHandler(element) {
+  console.log('Attaching AI handler to element:', element);
   const handleInput = debounce(async () => {
     if (!element.isConnected) return;
     activeElement = element;
@@ -90,18 +110,30 @@ function attachAIHandler(element) {
       controller?.abort();
       controller = new AbortController();
       
+      console.log('Sending message to background script with text:', context.text);
+      const apiKey = await getStorage('apiKey');
+      console.log('Got API key:', apiKey ? 'Present' : 'Missing');
+      
+      if (!apiKey) {
+        console.error('No API key found. Please set your API key in the extension popup.');
+        return;
+      }
+
+      console.log('Sending message to background script...');
       const suggestion = await chrome.runtime.sendMessage({
         type: 'fetchCompletion',
         text: context.text,
-        apiKey: await getStorage('apiKey')
+        apiKey: apiKey
       });
 
+      console.log('Received suggestion:', suggestion);
       if (suggestion?.trim()) {
         showGhostText(element, suggestion, context.absolutePos);
       } else {
         clearGhostText();
       }
     } catch (error) {
+      console.error('Error in handleInput:', error);
       if (error.name !== 'AbortError') {
         console.error('API error:', error);
       }
@@ -110,7 +142,12 @@ function attachAIHandler(element) {
   });
 
   const events = ['input', 'keyup', 'click', 'focus'];
-  events.forEach(event => element.addEventListener(event, handleInput));
+  events.forEach(event => {
+    element.addEventListener(event, (e) => {
+      console.log(`Event ${event} triggered on element`);
+      handleInput(e);
+    });
+  });
   
   element.addEventListener('keydown', handleKeyDown);
   element.addEventListener('blur', clearGhostText);
@@ -215,5 +252,14 @@ function insertSuggestion(element, text) {
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', watchTextFields);
+console.log('Initializing content script');
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM Content Loaded, starting to watch text fields');
+    watchTextFields();
+  });
+} else {
+  console.log('DOM already loaded, starting to watch text fields');
+  watchTextFields();
+}
 document.addEventListener('visibilitychange', clearGhostText);
