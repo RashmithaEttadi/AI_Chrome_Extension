@@ -43,11 +43,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       body: JSON.stringify({
         contents: [{
           parts: [{
-            text: `Continue this text naturally: "${request.text}". Respond ONLY with the text continuation, no explanations.`
+            text: `Website: ${request.context.hostname}. Current text: "${request.context.fullText}". 
+            Continue the last part ("${request.text}") naturally with MAX 5 WORDS. 
+            Respond ONLY with the text continuation, no explanations.`
           }]
         }],
         generationConfig: {
-          maxOutputTokens: 25,
+          maxOutputTokens: 20,
           temperature: 0.3,
           topP: 0.95
         }
@@ -65,6 +67,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
       
       const completion = data.candidates[0].content.parts[0].text.trim();
+      const wordCount = completion.split(/\s+/).length;
+      if (wordCount > 5) {
+                completion = completion.split(/\s+/).slice(0,5).join(' ') + '...';
+              }
       console.log('Sending completion:', completion);
       sendResponse(completion);
     })

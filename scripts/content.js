@@ -121,10 +121,14 @@ function attachAIHandler(element) {
 
       console.log('Sending message to background script...');
       const suggestion = await chrome.runtime.sendMessage({
-        type: 'fetchCompletion',
-        text: context.text,
-        apiKey: apiKey
-      });
+  type: 'fetchCompletion',
+  text: context.text,
+  apiKey: apiKey,
+  context: {
+    hostname: document.location.hostname,
+    fullText: element.isContentEditable ? element.textContent : element.value
+  }
+});
 
       console.log('Received suggestion:', suggestion);
       if (suggestion?.trim()) {
@@ -172,7 +176,8 @@ function getTextContext(element) {
   const end = Math.min(text.length, cursorPos + 20);
   return {
     text: text.slice(start, end),
-    absolutePos: cursorPos
+    absolutePos: cursorPos,
+    fullText: element.isContentEditable ? element.textContent : element.value
   };
 }
 
